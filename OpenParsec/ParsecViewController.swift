@@ -76,6 +76,11 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	var keyboardAccessoriesView: UIView?
 	var keyboardHeight: CGFloat = 0.0
 	var keyboardVisible: Bool = false
+	let tabletopKeyboard = TabletopKeyboard()
+	private(set) var tabletopActive = false
+	var onTabletopKeyboardToggle: (() -> Bool)?
+	private var nativeKeyboardBeforeTabletop = false
+	private let suppressedKeyboard = UIView(frame: .zero)
 	var pinnedToKeyboard = false
 	var onKeyboardCoversPicture: (() -> Void)?
 	private var panHandle: UIImageView?
@@ -154,6 +159,37 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 				}
 			}
 		}
+	}
+	func setTabletopActive(_ active: Bool) {
+		guard DuoSupport.isDuo, active != tabletopActive else { return }
+		loadViewIfNeeded()
+		resetKeyState()
+		clearToolbarModifiers(sendToHost: true)
+		flushAllTouches()
+		if active { nativeKeyboardBeforeTabletop = keyboardVisible }
+		tabletopActive = active
+		tabletopKeyboard.enabled = active
+		view.clipsToBounds = active
+		if active {
+			keyboardVisible = false
+			keyboardHeight = 0
+			keyboardCoversPicture = false
+			pinnedToKeyboard = false
+			scrollView.contentInset = .zero
+			setPanHandleVisible(false)
+			onKeyboardVisibilityChanged?(false)
+			// Stay in the responder chain for hardware keys, but supply no software keyboard.
+			DispatchQueue.main.async { [weak self] in
+				guard let self = self, self.tabletopActive, self.view.window != nil else { return }
+				self.reloadInputViews()
+				self.becomeFirstResponder()
+			}
+		} else {
+			resignFirstResponder()
+			reloadInputViews()
+			setKeyboardVisible(nativeKeyboardBeforeTabletop)
+		}
+		view.setNeedsLayout()
 	}
 
 	func updateImage() {
@@ -463,6 +499,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 
 	override func viewWillDisappear(_ animated: Bool) {
 		super.viewWillDisappear(animated)
+		if DuoSupport.isDuo { tabletopKeyboard.releaseAll() }
 		pendingResolution?.cancel()
 		UIApplication.shared.isIdleTimerDisabled = false
 		stopMomentum()
@@ -577,6 +614,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		stopKeyRepeat()
 		optCmdRemapActive = false
 		altKeyHeld = false
+		if DuoSupport.isDuo { tabletopKeyboard.releaseAll() }
 	}
 
 	private func isModifierKey(_ keyCode: UIKeyboardHIDUsage) -> Bool {
@@ -591,6 +629,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	}
 
 	@objc func keyboardWillShow(notification: NSNotification) {
+		guard !tabletopActive else { return }
 		if let keyboardFrame = (notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue {
 			let keyboardFrameInView = view.convert(keyboardFrame, from: nil)
 			let scrollFrameInView = scrollView.convert(scrollView.bounds, to: view)
@@ -708,6 +747,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	}
 
 	@objc func keyboardWillHide(notification: NSNotification) {
+		guard !tabletopActive else { return }
 		keyboardHeight = 0.0
         keyboardVisible = false
 		keyboardCoversPicture = false
@@ -856,7 +896,10 @@ extension ParsecViewController: UIGestureRecognizerDelegate {
 		}
 	}
 
-	@objc private func appWillResignActive() { flushAllTouches() }
+	@objc private func appWillResignActive() {
+		flushAllTouches()
+		if DuoSupport.isDuo { resetKeyState() }
+	}
 
 	// Drop all touch state and release any held button so nothing sticks when backgrounded.
 	private func flushAllTouches() {
@@ -1186,6 +1229,7 @@ extension ParsecViewController: UIGestureRecognizerDelegate {
 	}
 
 	@objc func handleThreeFinderTap(_ gestureRecognizer: UITapGestureRecognizer) {
+		if onTabletopKeyboardToggle?() == true { return }
 		setKeyboardVisible(!keyboardVisible)
 	}
 
@@ -1396,6 +1440,9 @@ extension ParsecViewController: UIKeyInput, UITextInputTraits {
 	override var canBecomeFirstResponder: Bool {
 		return true
 	}
+	override var inputView: UIView? {
+		tabletopActive ? suppressedKeyboard : nil
+	}
 
 	func insertText(_ text: String) {
 		CParsec.sendVirtualKeyboardInput(text: text)
@@ -1407,6 +1454,7 @@ extension ParsecViewController: UIKeyInput, UITextInputTraits {
 
     // copied from moonlight https://github.com/moonlight-stream/moonlight-ios/blob/022352c1667788d8626b659d984a290aa5c25e17/Limelight/Input/StreamView.m#L393
 	override var inputAccessoryView: UIView? {
+		if tabletopActive { return nil }
 
 		if let keyboardAccessoriesView {
 			return keyboardAccessoriesView
@@ -1532,6 +1580,7 @@ extension ParsecViewController: UIKeyInput, UITextInputTraits {
 
 	@objc private func inputWasReleased() {
 		clearToolbarModifiers(sendToHost: false)
+		if DuoSupport.isDuo { tabletopKeyboard.releaseAll(sendToHost: false) }
 	}
 
 	private func clearToolbarModifiers(sendToHost: Bool) {
@@ -1589,9 +1638,11 @@ extension ParsecViewController: UIKeyInput, UITextInputTraits {
     // 3. call becomeFirstResponder().
     // 4. Do NOT simplify this to a synchronous call, or it will fail in some race conditions.
 	func setKeyboardVisible(_ visible: Bool) {
+		guard !tabletopActive else { return }
 		keyboardVisible = visible
 		if visible {
             DispatchQueue.main.async {
+				if DuoSupport.isDuo && (self.tabletopActive || !self.keyboardVisible) { return }
                 self.reloadInputViews()
                 let success = self.becomeFirstResponder()
                 if !success {
@@ -1624,6 +1675,9 @@ class TouchOverlayView: UIView {
 		let active = (event?.allTouches ?? []).filter { touch in
 			guard touch.phase != .ended && touch.phase != .cancelled else { return false }
 			if #available(iOS 13.4, *), touch.type == .indirectPointer { return false }
+			if DuoSupport.isDuo {
+				guard let owner = touch.view, owner === self || owner.isDescendant(of: self) else { return false }
+			}
 			return true
 		}
 		inputDelegate?.parsecTouchesUpdated(active, moved: moved)

@@ -51,8 +51,27 @@ enum AdaptiveGeometry {
 				y: min(max(point.y, 0), max(0, content.height - viewport.height + bottomInset)))
 	}
 
-	// Keep interactive controls in a usable region, preferring the bottom/trailing
-	// half of an active fold. Inputs are in the safe-area container's coordinates.
+	// Stream controls keep their familiar left-side placement in book posture.
+	// Select the pane before applying camera avoidance so an unequal safe area
+	// cannot send the controls across the fold merely to gain a little more room.
+	static func streamControlRegion(in bounds: CGRect, divisions: [CGRect], occlusions: [CGRect]) -> CGRect {
+		for fold in divisions where valid(fold.size) && fold.height > fold.width {
+			let cut = bounds.intersection(fold)
+			guard !cut.isNull, cut.width > 0, cut.height > 0,
+				  cut.minY <= bounds.minY, cut.maxY >= bounds.maxY else { continue }
+			let left = CGRect(x: bounds.minX, y: bounds.minY, width: cut.minX - bounds.minX, height: bounds.height)
+			let region = controlRegion(in: left, avoiding: occlusions)
+			let obscured = occlusions.contains {
+				let overlap = region.intersection($0)
+				return !overlap.isNull && overlap.width > 0 && overlap.height > 0
+			}
+			if region.width >= 80 && region.height >= 80 && !obscured { return region }
+		}
+		return controlRegion(in: bounds, avoiding: divisions + occlusions)
+	}
+
+	// Largest usable rectangle, with bottom/trailing tie-breaking. Inputs are
+	// in the safe-area container's coordinates; tabletop pane sizing also uses this.
 	static func controlRegion(in bounds: CGRect, avoiding obstacles: [CGRect]) -> CGRect {
 		var region = bounds
 		for obstacle in obstacles {

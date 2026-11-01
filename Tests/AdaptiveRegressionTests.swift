@@ -52,11 +52,28 @@ enum AdaptiveRegressionTests {
 		check(AdaptiveGeometry.controlRegion(in: bounds, avoiding: []) == bounds, "flat screen uses full safe area")
 		let verticalFold = CGRect(x: 390, y: 0, width: 20, height: 700)
 		let verticalRegion = AdaptiveGeometry.controlRegion(in: bounds, avoiding: [verticalFold])
-		check(verticalRegion.minX == 410 && verticalRegion.width == 390, "book pose prefers trailing controls")
+		check(verticalRegion.minX == 410 && verticalRegion.width == 390, "generic largest-region helper retains trailing tie-break")
 		check(!verticalRegion.intersects(verticalFold.insetBy(dx: 1, dy: 1)), "controls avoid vertical hinge")
 		let horizontalFold = CGRect(x: 0, y: 340, width: 800, height: 20)
 		let horizontalRegion = AdaptiveGeometry.controlRegion(in: bounds, avoiding: [horizontalFold])
 		check(horizontalRegion.minY == 360 && horizontalRegion.height == 340, "tabletop pose prefers bottom controls")
+		let bookControls = AdaptiveGeometry.streamControlRegion(in: bounds, divisions: [verticalFold], occlusions: [])
+		check(bookControls == CGRect(x: 0, y: 0, width: 390, height: 700), "book stream controls stay in left pane")
+		let unevenFold = CGRect(x: 300, y: -20, width: 20, height: 740)
+		check(AdaptiveGeometry.streamControlRegion(in: bounds, divisions: [unevenFold], occlusions: []).maxX == 300,
+			  "book controls prefer usable left pane even when right is larger")
+		let leftCamera = CGRect(x: 0, y: 0, width: 50, height: 50)
+		let bookCameraControls = AdaptiveGeometry.streamControlRegion(in: bounds, divisions: [verticalFold], occlusions: [leftCamera])
+		check(bookCameraControls.maxX <= 390 && bookCameraControls.minY == 50, "left-pane controls still avoid the camera")
+		check(AdaptiveGeometry.streamControlRegion(in: bounds, divisions: [verticalFold],
+												  occlusions: [CGRect(x: 0, y: 0, width: 390, height: 700)]).minX == 410,
+			  "fully obscured left pane falls back to usable right pane")
+		check(AdaptiveGeometry.streamControlRegion(in: bounds, divisions: [], occlusions: []) == bounds,
+			  "flat posture keeps full control region")
+		check(AdaptiveGeometry.streamControlRegion(in: bounds, divisions: [horizontalFold], occlusions: []) == horizontalRegion,
+			  "horizontal fold control placement unchanged")
+		check(AdaptiveGeometry.streamControlRegion(in: bounds, divisions: [CGRect(x: 390, y: 0, width: 0, height: 700)], occlusions: []) == bounds,
+			  "inactive division cannot select a book pane")
 		let camera = CGRect(x: 750, y: 0, width: 50, height: 50)
 		let cameraRegion = AdaptiveGeometry.controlRegion(in: bounds, avoiding: [camera])
 		check(!cameraRegion.intersects(camera.insetBy(dx: 1, dy: 1)), "controls avoid active camera")
@@ -67,6 +84,7 @@ enum AdaptiveRegressionTests {
 		check(AdaptiveGeometry.pixelSize(.zero, scale: 3) == nil, "zero resolution ignored")
 		check(AdaptiveGeometry.pixelSize(open, scale: .infinity) == nil, "invalid scale ignored")
 
-		print("Passed \(checks) adaptive layout assertions.")
+		TabletopRegressionTests.run { check($0, $1) }
+		print("Passed \(checks) adaptive layout and tabletop assertions.")
 	}
 }

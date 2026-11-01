@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A27100000000000000000003 /* TabletopState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A27100000000000000000004 /* TabletopState.swift */; };
+		A27100000000000000000005 /* TabletopKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A27100000000000000000006 /* TabletopKeyboard.swift */; };
+		A27100000000000000000007 /* DuoTabletopContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A27100000000000000000008 /* DuoTabletopContainer.swift */; };
 		A27100000000000000000001 /* AdaptiveGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A27100000000000000000002 /* AdaptiveGeometry.swift */; };
 		170E0A772BEF5AFF00B0EA32 /* ParsecViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 170E0A762BEF5AFF00B0EA32 /* ParsecViewController.swift */; };
 		17374D412CB8E35D00EDCEE7 /* KeyCodeTranslators.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17374D402CB8E35500EDCEE7 /* KeyCodeTranslators.swift */; };
@@ -60,6 +63,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A27100000000000000000004 /* TabletopState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabletopState.swift; sourceTree = "<group>"; };
+		A27100000000000000000006 /* TabletopKeyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabletopKeyboard.swift; sourceTree = "<group>"; };
+		A27100000000000000000008 /* DuoTabletopContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuoTabletopContainer.swift; sourceTree = "<group>"; };
 		A27100000000000000000002 /* AdaptiveGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveGeometry.swift; sourceTree = "<group>"; };
 		170E0A762BEF5AFF00B0EA32 /* ParsecViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParsecViewController.swift; sourceTree = "<group>"; };
 		17374D402CB8E35500EDCEE7 /* KeyCodeTranslators.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyCodeTranslators.swift; sourceTree = "<group>"; };
@@ -143,6 +149,9 @@
 			isa = PBXGroup;
 			children = (
 				A27100000000000000000002 /* AdaptiveGeometry.swift */,
+				A27100000000000000000004 /* TabletopState.swift */,
+				A27100000000000000000006 /* TabletopKeyboard.swift */,
+				A27100000000000000000008 /* DuoTabletopContainer.swift */,
 				E76224A02F8C017700A2F86F /* ParsecBackgroundManager.swift */,
 				E762250A2F8D0A0000A2F86F /* PictureInPictureManager.swift */,
 				17374D402CB8E35500EDCEE7 /* KeyCodeTranslators.swift */,
@@ -289,6 +298,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				A27100000000000000000001 /* AdaptiveGeometry.swift in Sources */,
+				A27100000000000000000003 /* TabletopState.swift in Sources */,
+				A27100000000000000000005 /* TabletopKeyboard.swift in Sources */,
+				A27100000000000000000007 /* DuoTabletopContainer.swift in Sources */,
 				FC16A7AD29A97BDA00BB70A7 /* Shared.swift in Sources */,
 				84480EBE2ADC4FDA007DE5F1 /* GameController.swift in Sources */,
 				27AC751829EA339B00E8CAF7 /* URLImage.swift in Sources */,

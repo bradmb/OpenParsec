@@ -172,10 +172,27 @@ struct ParsecStatusBar: View {
 // Do not remove or change to a struct. If ParsecViewController is recreated, the keyboard responder chain breaks.
 class ParsecSession: ObservableObject {
     let controller: ParsecViewController
+	@Published private(set) var tabletop = TabletopPostureState()
 
     init() {
         self.controller = ParsecViewController()
+		controller.onTabletopKeyboardToggle = { [weak self] in
+			guard let self = self, self.tabletop.available else { return false }
+			self.toggleTabletop()
+			return true
+		}
     }
+
+	func setTabletopAvailable(_ available: Bool) {
+		guard tabletop.available != available else { return }
+		tabletop.update(available: available)
+		controller.setTabletopActive(tabletop.active)
+	}
+
+	func toggleTabletop() {
+		tabletop.toggle()
+		controller.setTabletopActive(tabletop.active)
+	}
 }
 
 struct ParsecView: View {
@@ -234,11 +251,11 @@ struct ParsecView: View {
     // 'onAppear' is a good place, or inside the init of ParsecSession if possible (but it doesn't have access to binding).
     // Let's use onAppear/post.
 
-	var body: some View {
+	private var streamContent: some View {
 		ZStack {
 
 			UIViewControllerWrapper(self.parsecViewController)
-				.ignoresSafeArea()
+				.ignoresSafeArea(edges: session.tabletop.active ? [] : .all)
 				.zIndex(1)
 				.prefersPersistentSystemOverlaysHidden()
 
@@ -305,13 +322,23 @@ struct ParsecView: View {
 						.onPreferenceChange(StreamControlsHeight.self) { controlsHeight = $0 }
 						.frame(width: width, height: height)
 						.position(x: region.minX + width / 2, y: region.minY + height / 2)
-						.allowsHitTesting(!hideOverlay || !hideKeyboardButton || showMenu)
+						.allowsHitTesting(!hideOverlay || (!hideKeyboardButton && !session.tabletop.available) || showMenu)
 					}
 				} else {
 					streamControls
 				}
 			}
 			.zIndex(2)
+		}
+	}
+
+	var body: some View {
+		Group {
+			if DuoSupport.isDuo {
+				DuoTabletopContainer(session: session) { streamContent }
+			} else {
+				streamContent
+			}
 		}
 		.statusBarHidden(SettingsHandler.hideStatusBar)
 		.alert(isPresented: $showDCAlert) {
@@ -331,12 +358,19 @@ struct ParsecView: View {
 				  secondaryButton: .cancel(Text("Close"), action: {disconnect()}))
 		}
 		.onChange(of: isReconnecting) { reconnecting in
+			if DuoSupport.isDuo { parsecViewController.tabletopKeyboard.releaseAll() }
 			if !reconnecting {
 				CParsec.setMuted(muted)
 				if muted { CParsec.pause(video: false, audio: true) }
 			}
 		}
 		.onAppear(perform: post)
+		.onChange(of: showDCAlert) { shown in
+			if shown && DuoSupport.isDuo { parsecViewController.tabletopKeyboard.releaseAll() }
+		}
+		.onDisappear {
+			if DuoSupport.isDuo { parsecViewController.tabletopKeyboard.enabled = false }
+		}
 		.onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ParsecBackgroundDisconnect"))) { _ in
 			if #available(iOS 15.0, *) {
 				if PictureInPictureManager.shared.isPiPActive {
@@ -375,7 +409,7 @@ struct ParsecView: View {
 					Spacer()
 				}
 			}
-			if !hideKeyboardButton {
+			if !hideKeyboardButton && !session.tabletop.available {
 				HStack {
 					Button(action: toggleKeyboard) {
 						Image(systemName: "keyboard")
@@ -387,6 +421,7 @@ struct ParsecView: View {
 							.background(Rectangle().fill(Color("BackgroundPrompt").opacity(showKeyboard ? 0.75 : 0.5)))
 							.cornerRadius(8)
 					}
+					.accessibilityLabel("Show keyboard")
 					.padding(.leading)
 					.edgesIgnoringSafeArea(DuoSupport.isDuo ? [] : .all)
 					Spacer()
@@ -395,6 +430,18 @@ struct ParsecView: View {
 			if showMenu {
 				HStack {
 					VStack(spacing: 3) {
+						if session.tabletop.available {
+							Button(action: {
+								session.toggleTabletop()
+								showMenu = false
+							}) {
+								Label(session.tabletop.active ? "Exit Laptop Mode" : "Enter Laptop Mode",
+									  systemImage: session.tabletop.active ? "arrow.up.left.and.arrow.down.right" : "keyboard")
+									.padding(8)
+									.frame(maxWidth: .infinity, minHeight: 44)
+									.multilineTextAlignment(.center)
+							}
+						}
 						Button(action: disableOverlay) {
 							Text("Hide Buttons")
 								.padding(8)
@@ -510,17 +557,22 @@ struct ParsecView: View {
 	}
 
 	private func controlRegion(_ geometry: GeometryProxy) -> CGRect {
-		var obstacles: [CGRect] = []
-		// Older Xcode SDKs cannot resolve the reserved-region APIs, even behind #available.
+		var divisions: [CGRect] = []
+		var occlusions: [CGRect] = []
 		#if compiler(>=6.4)
 		if #available(iOS 27.1, *) {
-			obstacles = (geometry.reservedRegions(kind: .division) + geometry.reservedRegions(kind: .occlusion)).map { $0.frame }
+			divisions = geometry.reservedRegions(kind: .division).map(\.frame)
+			occlusions = geometry.reservedRegions(kind: .occlusion).map(\.frame)
 		}
 		#endif
-		return AdaptiveGeometry.controlRegion(in: CGRect(origin: .zero, size: geometry.size), avoiding: obstacles)
+		return AdaptiveGeometry.streamControlRegion(in: CGRect(origin: .zero, size: geometry.size),
+													divisions: divisions, occlusions: occlusions)
 	}
 
 	func post() {
+		if DuoSupport.isDuo {
+			parsecViewController.tabletopKeyboard.enabled = session.tabletop.active
+		}
 		ParsecBackgroundManager.shared.onShouldDisconnect = {
 			NotificationCenter.default.post(name: NSNotification.Name("ParsecBackgroundDisconnect"), object: nil)
 		}
@@ -666,6 +718,7 @@ struct ParsecView: View {
 
 	func disconnect(isBackgroundDisconnect: Bool = false) {
 		appNote("[stream] disconnect\(isBackgroundDisconnect ? " in the background" : "")")
+		if DuoSupport.isDuo { parsecViewController.tabletopKeyboard.enabled = false }
 		if !isBackgroundDisconnect {
 			ParsecBackgroundManager.shared.endSession()
 		}
@@ -718,6 +771,10 @@ struct ParsecView: View {
 	}
 
 	func toggleKeyboard() {
+		if session.tabletop.available {
+			session.toggleTabletop()
+			return
+		}
 		DispatchQueue.main.async {
 			showKeyboard.toggle()
 			parsecViewController.setKeyboardVisible(showKeyboard)
